@@ -11,7 +11,7 @@ This bot is built using a modern Node.js ecosystem focusing on high-level headle
 | **Automation** | **Playwright Extra** | Browser automation framework from Microsoft (faster & lighter than Puppeteer). The `extra` version is used to support stealth plugins. |
 | **Anti-Detection** | **puppeteer-extra-plugin-stealth** | Modifies the headless browser (removes `webdriver` flags, spoofs canvas/WebGL) so the bot remains undetected by Cloudflare / Turnstile used by Loket. |
 | **Fingerprinting** | **fingerprint-generator & injector** | Generates fake but realistic browser profiles (User Agent, viewport, OS) randomly for each browser context so they appear as 10 different real users. |
-| **Networking** | **Geonode Residential Proxies** | Changes the IP address of each browser using residential IPs (ISPs), ensuring Loket does not see 10 requests originating from the same server IP. |
+| **Networking** | **Residential Proxies** | Changes the IP address of each browser using residential IPs (ISPs), ensuring Loket does not see 10 requests originating from the same server IP. |
 | **Notification** | **Telegram Bot API (node-fetch)** | Sends real-time webhook alerts (text & fullpage screenshot) directly to the user's mobile upon successfully securing the ticket. |
 | **Configuration** | **dotenv** | Manages the `.env` file to safely store sensitive data (ID cards, phone numbers, proxies) outside the source code (preventing it from entering version control). |
 
