@@ -1,80 +1,73 @@
-# Core Automation Flow: From Monitoring to Payment
+# Automation Flow & Tech Stack (Loket.com Ticket Sniper)
 
-This document outlines the step-by-step logic the bot executes to successfully snipe a ticket.
+## 🛠️ Tech Stack
 
----
+This bot is built using a modern Node.js ecosystem focusing on high-level headless browser automation:
 
-## Step 1: Monitoring & Triggering
-
-The bot starts in a lightweight polling state, continuously checking the event's landing page (e.g., `woodzinjakarta.com`).
-
-*   **Logic:** The Observer script fetches the landing page HTML or polls the underlying API every few seconds (with randomized intervals to avoid detection patterns).
-*   **Success Condition:** It detects the specific keyword (e.g., "BELI TIKET SEKARANG") or the `href` attribute of the target button changing from a placeholder (`#`) to the actual ticketing URL (e.g., `tiket.com/event/...`).
-*   **Action:** Immediately broadcast the target URL to the Orchestrator.
-
----
-
-## Step 2: The Queue / Waiting Room Survival Mode
-
-Once the Orchestrator receives the live URL, it instantly spawns Multiple Browser Contexts (e.g., 10-20 contexts), each bound to a unique sticky proxy.
-
-*   **Entry:** All contexts navigate to the ticketing URL simultaneously.
-*   **Detection:** The bot analyzes the DOM to check if it has landed in a "Waiting Room" (Cloudflare, Queue-it, or custom platform queue). It looks for text like "You are in line," "Estimasi waktu tunggu," or specific queue elements.
-*   **Maintenance:** 
-    *   The bot must *not* reload the page aggressively, as this resets the queue position.
-    *   It monitors the network tab (WebSocket or XHR polls) to ensure the connection to the queue server remains alive.
-    *   If a Cloudflare challenge appears during the queue, the stealth plugin or CAPTCHA solver handles it silently keeping the session active.
+| Category | Technology | Function & Reason |
+|----------|-----------|----------------|
+| **Runtime** | **Node.js** | JavaScript backend platform for script execution with highly performant asynchronous I/O. |
+| **Language** | **TypeScript** | Provides type-safety, autocompletion, and clean class structure (OOP) during development. Prevents runtime errors. |
+| **Automation** | **Playwright Extra** | Browser automation framework from Microsoft (faster & lighter than Puppeteer). The `extra` version is used to support stealth plugins. |
+| **Anti-Detection** | **puppeteer-extra-plugin-stealth** | Modifies the headless browser (removes `webdriver` flags, spoofs canvas/WebGL) so the bot remains undetected by Cloudflare / Turnstile used by Loket. |
+| **Fingerprinting** | **fingerprint-generator & injector** | Generates fake but realistic browser profiles (User Agent, viewport, OS) randomly for each browser context so they appear as 10 different real users. |
+| **Networking** | **Geonode Residential Proxies** | Changes the IP address of each browser using residential IPs (ISPs), ensuring Loket does not see 10 requests originating from the same server IP. |
+| **Notification** | **Telegram Bot API (node-fetch)** | Sends real-time webhook alerts (text & fullpage screenshot) directly to the user's mobile upon successfully securing the ticket. |
+| **Configuration** | **dotenv** | Manages the `.env` file to safely store sensitive data (ID cards, phone numbers, proxies) outside the source code (preventing it from entering version control). |
 
 ---
 
-## Step 3: Fast-Track Form Sniping
+## 🔄 Execution Flow (Automation)
 
-When a specific context reaches the front of the queue, the page automatically redirects or updates the DOM to display the ticket selection and checkout form.
+The sequence of processes from the very first second the bot runs until the invoice is acquired:
 
-*   **Recognition:** The bot detects the presence of ticket category containers or the specific "Checkout" form fields.
-*   **Data Injection (Critical Path):** Speed is everything here. While we discussed human-like interaction earlier, in a high-stakes ticket war, if behavioral detection isn't strictly enforced on the specific form fields, *direct DOM injection* is vastly faster.
+### 1. Preparation & Polling Phase (Observer)
+- User executes `npm start`.
+- The bot loads configurations from the `.env` file and guarantees no mandatory data is empty.
+- **ObserverService** opens 1 low-footprint browser instance (without stealth/proxy overhead).
+- The Observer loads the `LANDING_PAGE_URL`.
+- The Observer loops every 3 seconds scanning `<a>` tags' hrefs, searching for links containing the `TARGET_KEYWORD` (e.g. `loket.com`).
+- Once the Loket button appears → The bot captures the literal Loket URL → Proceeds to Phase 2.
 
-    **Implementation Choice:**
-    *   *Safe Mode:* Use `page.type()` with slight delays.
-    *   *Sniper Mode (Preferred if platform allows):* Use `page.fill()` or direct `page.evaluate()` to instantly populate the values.
+### 2. Assault Phase (Orchestrator & BrowserService)
+- Observer is destroyed.
+- **BrowserService** launches the main **Chromium headless** engine.
+- The bot spawns **Isolated Browser Contexts** concurrently (determined by `BROWSER_CONCURRENCY`, e.g., 10 contexts).
+- Every single browser context is injected with:
+  - 1 Unique Residential Proxy.
+  - 1 Complete Browser Fingerprint (OS, Screen, Device).
+  - The Stealth Plugin Injector.
+- The bot commands all snipers (**LoketSniperService**) to simultaneously hit the Loket URL found in Phase 1.
 
-```typescript
-// SNIPER MODE: Instant Form Fill (Assuming pre-loaded User Data Profile)
-async function snipeForm(page, userData) {
-    try {
-        console.log("Entering Sniper Mode: Filling Form");
-        
-        // Wait for the primary form container to be visible ensuring the page loaded completely
-        await page.waitForSelector('#checkout-form-container', { state: 'visible', timeout: 5000 });
+### 3. Queue & Checkout Phase (LoketSniperService)
+1. **Waiting Room (Queue):** All 10 browsers enter the Loket page (or virtual Waiting Room). They wait independently utilizing different proxy IPs.
+2. **Add Tickets:** The first browser to bypass the queue locates the configured ticket category (`TICKET_CATEGORY`), e.g. "CAT 1".
+3. **Select Quantity:** Identifies the parent/container of that category and clicks the `(+)` button exactly `TICKET_QUANTITY` times.
+4. **Order Button:** Locates and clicks the "Order Now" or equivalent buy button to lock the tickets.
 
-        // Instantly inject data into inputs
-        await Promise.all([
-            page.fill('input[name="nik"]', userData.nik),
-            page.fill('input[name="fullName"]', userData.fullName),
-            page.fill('input[name="email"]', userData.email),
-            page.fill('input[name="phoneNumber"]', userData.phone),
-            page.fill('input[name="dob"]', userData.dob) // Format strictly depends on target site
-        ]);
+### 4. Data Population Phase (Customer Form)
+- The *Personal Information* form page opens.
+- The bot automatically inputs at lightning speed (in ms):
+  - First Name & Last Name (automatically split by the bot from `USER_FULLNAME`).
+  - Email & NIK / ID Document number.
+  - Telephone (adjusting standard `08...` formats to the expected dropdown logic format if needed).
+  - Selects the **3 DOB Dropdowns** (Date, Month, Year).
+  - Selects the **Gender** Radio Button (e.g. `Female` = `gender_2`).
+- Checks all mandatory Terms & Conditions checkboxes.
+- Submits the form ("Next" button).
 
-        // Proceed to payment selection
-        await page.click('button#continue-to-payment');
-
-    } catch (error) {
-        console.error("Form Sniping Failed:", error);
-        // Trigger recovery or fallback to safe mode
-    }
-}
-```
-
----
-
-## Step 4: Rapid Payment Finalization
-
-After the personal details are submitted, the ticketing platform presents the payment gateway selection.
-
-*   **Selection:** The bot explicitly targets the designated payment method. The requirement is **BCA Virtual Account**.
-*   **Execution:** 
-    1.  Wait for the payment option list to render.
-    2.  Locate and click the element containing "BCA Virtual Account" (usually by matching text or a specific ID).
-    3.  Instantly locate and click the "Finalize," "Bayar Sekarang," or "Selesaikan Pesanan" button.
-*   **Verification:** The bot waits for the final redirect to the "Success" or "Waiting for Payment" page containing the generated Virtual Account number.
+### 5. Payment & Notification Phase (Payment & TelegramNotifier)
+- The Payment Method selection page opens.
+- The bot scans for `Virtual Account BCA` and clicks on it.
+- The bot triggers the final action button: **"Pay Now"**.
+- The specific Event's Loket Invoice page appears.
+- The bot dynamically extracts:
+  1. The VA (Virtual Account) number.
+  2. The unique Invoice Code.
+  3. The Total billing price.
+  4. The active Page URL.
+- **TelegramNotifier** activates:
+  1. Fires a **Text Message** containing the aforementioned details for easy copy-pasting.
+  2. Takes a **Full Page Screenshot** and sends it as a photo object to Telegram.
+- **Connection Termination:** The victorious winning browser context signals the system (triggering `AbortController`). The remaining 9 sister browsers are immediately halted and killed to prevent duplicate checkouts.
+- The bot process cleanly exits with `Exit 0` (Success).
