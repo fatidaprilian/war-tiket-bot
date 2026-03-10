@@ -27,7 +27,11 @@ export class ObserverService {
                 const links = await page.$$eval('a', (anchors) => anchors.map(a => a.href));
 
                 for (const href of links) {
-                    if (href && href.includes(Config.TARGET_KEYWORD)) {
+                    if (
+                        href && 
+                        href.includes(Config.TARGET_KEYWORD) && 
+                        href.startsWith('http')
+                    ) {
                         this.isLive = true;
                         this.targetUrl = href;
                         console.log(`\n======================================\n[Observer] 🚨 TICKETING OVEN LIVE! 🚨\nURL: ${this.targetUrl}\n======================================\n`);
