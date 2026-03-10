@@ -1,0 +1,7 @@
+node_modules/
+dist/
+build/
+.env
+scraper_output.txt
+isiweb.txt
+*.log
