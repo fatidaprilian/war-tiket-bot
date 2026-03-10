@@ -73,13 +73,20 @@ export class LoketSniperService {
         for (let i = 1; i <= retries; i++) {
             if (abortSignal?.aborted) throw new Error("AbortError");
             try {
-                const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                // Critical Fix for Queue: Wait only for 'commit' so we don't crash with 30s timeout
+                // while sitting in Loket's virtual waiting room.
+                const res = await page.goto(url, { waitUntil: 'commit', timeout: 60000 });
                 if (res && res.status() >= 500) {
                     await page.waitForTimeout(2000);
                     continue;
                 }
                 return;
             } catch (err: any) {
+                // If it's a timeout but the document is loaded enough to run the queue, we can just proceed
+                if (err.message.includes('Timeout') && page.url().includes('loket.com')) {
+                    console.warn(`[Sniper] Navigation timeout, but already on Loket URL. Assuming Queue is running...`);
+                    return; // Proceed anyway, the waitForCheckoutPhase loop will handle waiting
+                }
                 if (i === retries) throw err;
                 await page.waitForTimeout(1000);
             }
@@ -89,19 +96,27 @@ export class LoketSniperService {
     private async waitForCheckoutPhase(page: Page, context: BrowserContext, id: number, abortSignal?: AbortSignal) {
         console.log(`[Sniper-${id}] 🎫 Waiting for Ticket Selection Page...`);
 
-        // Wait for the ticket categories to load with resilient refresh
+        // Wait for the ticket categories to load WITHOUT refreshing the page!
+        // Loket's Waiting Room is a virtual queue. If we refresh, we lose our spot.
         let isReady = false;
         let waitLoops = 0;
+        
         while (!isReady) {
             if (abortSignal?.aborted) throw new Error("AbortError");
             try {
+                // Wait passively for the element to appear in the DOM. 
+                // Loket will auto-redirect or modify the DOM when our queue turn arrives.
                 await page.waitForSelector(`text="${Config.TICKET_CATEGORY}"`, { timeout: 30000 });
                 isReady = true;
             } catch (e: any) {
                 waitLoops++;
-                console.warn(`[Sniper-${id}] Timeout waiting for category (Queue freeze?). Loop: ${waitLoops} - Refreshing...`);
-                await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-                if (waitLoops > 20) throw new Error("Failed to pass queue after 10 minutes.");
+                // DO NOT RELOAD HERE. Just print log and wait again.
+                console.log(`[Sniper-${id}] ⏳ Still in Waiting Room... (30s checkpoint #${waitLoops})`);
+                
+                // Nuclear safety timeout just in case the tab completely crashes (e.g. 2 hours)
+                if (waitLoops > 240) {
+                    throw new Error("Timeout: 2 hours passed in queue.");
+                }
             }
         }
 
