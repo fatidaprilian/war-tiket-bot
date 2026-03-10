@@ -110,8 +110,21 @@ export class LoketSniperService {
                 isReady = true;
             } catch (e: any) {
                 waitLoops++;
+                
+                // Try to extract queue position from screen
+                const queueInfo = await page.evaluate(() => {
+                    const textContent = document.body.innerText.toLowerCase();
+                    // Loket and Queue-it use various texts: "antrean ke", "queue number", "nomor antrean"
+                    const match = textContent.match(/(antrean|antrian|queue|urutan)[\s\w:]*?([0-9]{1,7})/i);
+                    // Also check for specific queue-it elements if present
+                    const qElem = document.querySelector('.queue-number, #queue-number, span#QueueNumber');
+                    if (qElem && qElem.textContent) return qElem.textContent.trim();
+                    if (match && match[2]) return match[2];
+                    return "Calculating/Hidden";
+                }).catch(() => "Unknown");
+
                 // DO NOT RELOAD HERE. Just print log and wait again.
-                console.log(`[Sniper-${id}] ⏳ Still in Waiting Room... (30s checkpoint #${waitLoops})`);
+                console.log(`[Sniper-${id}] ⏳ In Queue. Position: ~${queueInfo} | (30s checkpoint #${waitLoops})`);
                 
                 // Nuclear safety timeout just in case the tab completely crashes (e.g. 2 hours)
                 if (waitLoops > 240) {
